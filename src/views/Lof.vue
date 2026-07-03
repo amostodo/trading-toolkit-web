@@ -55,7 +55,7 @@
         @click="activeTab = tab.key"
       >
         {{ tab.label }}
-        <span class="tab-count" :class="{ hot: tab.key === 'premium' }">{{ tabStats[tab.key] }}</span>
+        <span class="tab-count" :class="{ hot: tab.key === 'premium' || tab.key === 'arbitrage' }">{{ tabStats[tab.key] }}</span>
       </button>
     </div>
 
@@ -69,6 +69,7 @@
 
     <!-- 桌面表格 -->
     <el-table
+      v-if="activeTab !== 'arbitrage'"
       class="desktop-table"
       :data="pagedList"
       v-loading="store.loading"
@@ -150,7 +151,7 @@
     </el-table>
 
     <!-- 移动卡片流 -->
-    <div class="mobile-cards" v-loading="store.loading">
+    <div class="mobile-cards" v-if="activeTab !== 'arbitrage'" v-loading="store.loading">
       <el-card
         v-for="row in pagedList"
         :key="row.code"
@@ -203,6 +204,115 @@
         </div>
       </el-card>
       <el-empty v-if="!store.loading && pagedList.length === 0" description="暂无数据" />
+    </div>
+
+    <!-- 套利机会 Tab 桌面表格 -->
+    <el-table
+      v-if="activeTab === 'arbitrage'"
+      class="desktop-table"
+      :data="pagedList"
+      v-loading="store.loading"
+      stripe
+      @row-click="openDetail"
+      :row-class-name="rowClassName"
+    >
+      <el-table-column label="基金" min-width="200">
+        <template #default="{ row }">
+          <div class="name-cell">
+            <div class="name-line">
+              <span class="exchange-badge" :class="exchangeClass(row.exchange)">{{ row.exchange }}</span>
+              <span class="fund-name">{{ row.name }}</span>
+            </div>
+            <div class="code-line">
+              <span class="code-text">{{ row.code }}</span>
+            </div>
+          </div>
+        </template>
+      </el-table-column>
+      <el-table-column label="溢价率" width="110" align="right" sortable :sort-by="'premium'">
+        <template #default="{ row }">
+          <span
+            class="premium-value"
+            :class="{ negative: row.premium < 0, high: row.isHighlight }"
+          >{{ row.premiumText }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="净溢价" width="110" align="right">
+        <template #default="{ row }">
+          <span
+            class="premium-value"
+            :class="{ negative: row.netPremiumClass === 'negative', high: row.netPremiumClass === 'high' }"
+          >{{ row.netPremiumText }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="成交额" width="110" align="right">
+        <template #default="{ row }">
+          <span :class="amountClass(row)">{{ row.amountText }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="预期收益" width="110" align="right">
+        <template #default="{ row }">
+          <span class="expected-return">{{ (row.premium - 0.15).toFixed(2) }}%</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="风险提示" width="220">
+        <template #default="{ row }">
+          <div class="tag-group">
+            <el-tag v-if="row.lowLiquidity" type="danger" size="small" effect="dark">流动性低</el-tag>
+            <el-tag v-if="row.sustainedPremium" type="warning" size="small" effect="plain">连续溢价{{ row.consecutivePremium }}天</el-tag>
+            <el-tag v-if="row.limitAmount" type="primary" size="small" effect="plain">限购100</el-tag>
+            <span v-if="!row.lowLiquidity && !row.sustainedPremium && !row.limitAmount" class="risk-empty">--</span>
+          </div>
+        </template>
+      </el-table-column>
+    </el-table>
+
+    <!-- 套利机会 Tab 移动卡片流 -->
+    <div class="mobile-cards" v-if="activeTab === 'arbitrage'" v-loading="store.loading">
+      <el-card
+        v-for="row in pagedList"
+        :key="row.code"
+        class="mobile-card"
+        shadow="hover"
+        :class="{ 'row-highlight': row.isHighlight }"
+        @click="openDetail(row)"
+      >
+        <div class="mc-head">
+          <span class="exchange-badge" :class="exchangeClass(row.exchange)">{{ row.exchange }}</span>
+          <span class="fund-name">{{ row.name }}</span>
+          <span class="code-text">{{ row.code }}</span>
+        </div>
+        <div class="mc-metrics">
+          <div class="mc-metric">
+            <span class="mc-label">溢价率</span>
+            <span
+              class="premium-value"
+              :class="{ negative: row.premium < 0, high: row.isHighlight }"
+            >{{ row.premiumText }}</span>
+          </div>
+          <div class="mc-metric">
+            <span class="mc-label">净溢价</span>
+            <span
+              class="premium-value"
+              :class="{ negative: row.netPremiumClass === 'negative', high: row.netPremiumClass === 'high' }"
+            >{{ row.netPremiumText }}</span>
+          </div>
+          <div class="mc-metric">
+            <span class="mc-label">成交额</span>
+            <span :class="amountClass(row)">{{ row.amountText }}</span>
+          </div>
+          <div class="mc-metric">
+            <span class="mc-label">预期收益</span>
+            <span class="expected-return">{{ (row.premium - 0.15).toFixed(2) }}%</span>
+          </div>
+        </div>
+        <div class="mc-tags" v-if="row.lowLiquidity || row.sustainedPremium || row.limitAmount">
+          <el-tag v-if="row.lowLiquidity" type="danger" size="small" effect="dark">流动性低</el-tag>
+          <el-tag v-if="row.sustainedPremium" type="warning" size="small" effect="plain">连续溢价{{ row.consecutivePremium }}天</el-tag>
+          <el-tag v-if="row.limitAmount" type="primary" size="small" effect="plain">限购100</el-tag>
+        </div>
+      </el-card>
+      <el-empty v-if="!store.loading && pagedList.length === 0" description="暂无套利机会" />
     </div>
 
     <!-- 详情弹窗 -->
@@ -289,8 +399,57 @@
         <!-- 操作建议 -->
         <div class="detail-section">
           <div class="detail-section-title">操作建议</div>
-          <div class="advice-box">{{ detailData.advice }}</div>
+          <div class="advice-box">
+            <p v-for="(p, idx) in adviceParagraphs" :key="idx">{{ p }}</p>
+          </div>
         </div>
+
+        <!-- 预计收益计算 -->
+        <el-card class="detail-card" shadow="never">
+          <template #header>
+            <div class="card-title">预计收益计算</div>
+          </template>
+          <div class="calc-list">
+            <div class="calc-row">
+              <span class="calc-label">基础溢价率</span>
+              <span class="calc-value">{{ detailData.premium.toFixed(2) }}%</span>
+            </div>
+            <div class="calc-row">
+              <span class="calc-label">申购费率</span>
+              <span class="calc-value">0.15%</span>
+            </div>
+            <div class="calc-row">
+              <span class="calc-label">净溢价</span>
+              <span class="calc-value net-profit">{{ detailNetPremium.toFixed(2) }}%</span>
+            </div>
+            <div class="calc-row calc-row-text">
+              <span class="calc-label">一拖一账户预期收益</span>
+              <span class="calc-value-text" v-html="detailOneText"></span>
+            </div>
+            <div v-if="detailData.limitStatus === '限100'" class="calc-row calc-row-text">
+              <span class="calc-label">一拖六账户预期收益</span>
+              <span class="calc-value-text">
+                6 账户 × 100 元 × {{ detailNetPremium.toFixed(2) }} / 100 = <span class="profit-num">{{ detailSixProfit.toFixed(2) }} 元</span>
+              </span>
+            </div>
+            <div v-if="detailData.limitStatus === '限100'" class="calc-tip">
+              一拖六账户可放大限购场景下的收益
+            </div>
+          </div>
+        </el-card>
+
+        <!-- 限额说明 -->
+        <el-card class="detail-card" shadow="never">
+          <template #header>
+            <div class="card-title">限额说明</div>
+          </template>
+          <div class="limit-box">
+            <el-tag v-if="detailData.limitStatus === '暂停'" type="danger" size="default" effect="dark">已暂停申购</el-tag>
+            <el-tag v-else-if="detailData.limitStatus === '限100'" type="primary" size="default" effect="dark">限购 100 元</el-tag>
+            <el-tag v-else type="success" size="default" effect="dark">不限购</el-tag>
+            <span class="limit-desc">{{ limitDescText }}</span>
+          </div>
+        </el-card>
       </template>
     </el-dialog>
   </div>
@@ -316,17 +475,27 @@ const tabs = [
   { key: 'all', label: '全部' },
   { key: 'premium', label: '溢价≥5%' },
   { key: 'discount', label: '折价' },
-  { key: 'paused', label: '暂停' }
+  { key: 'paused', label: '暂停' },
+  { key: 'arbitrage', label: '套利机会' }
 ]
 
 const guideTextMap = {
   all: '全部 LOF 基金列表，按溢价率降序排列。关注高溢价且成交活跃的标的。',
   premium: '溢价≥5% 的基金，具备申购套利潜力。注意流动性风险与净值波动。',
   discount: '折价基金，可考虑持有套利（需≥7天，赎回费0.5%）。注意净值波动。',
-  paused: '申购暂停的基金，无法套利。关注恢复申购后的溢价变化。'
+  paused: '申购暂停的基金，无法套利。关注恢复申购后的溢价变化。',
+  arbitrage: '筛选可套利机会（溢价≥3%且成交额≥100万），按溢价率降序排列。注意流动性风险与限购影响。'
 }
 
 const guideText = computed(() => guideTextMap[activeTab.value])
+
+// 套利机会列表：可套利且按溢价率降序
+const arbitrageList = computed(() => {
+  return store.fundList
+    .filter(i => i.canArbitrage === true)
+    .slice()
+    .sort((a, b) => b.premium - a.premium)
+})
 
 // 按 Tab 过滤
 const filteredByTab = computed(() => {
@@ -334,6 +503,7 @@ const filteredByTab = computed(() => {
   if (activeTab.value === 'premium') return list.filter(i => i.premiumValue >= 5)
   if (activeTab.value === 'discount') return list.filter(i => i.premiumValue < 0)
   if (activeTab.value === 'paused') return list.filter(i => i.isPaused)
+  if (activeTab.value === 'arbitrage') return arbitrageList.value
   return list
 })
 
@@ -356,11 +526,68 @@ const tabStats = computed(() => {
     all: list.length,
     premium: list.filter(i => i.premiumValue >= 5).length,
     discount: list.filter(i => i.premiumValue < 0).length,
-    paused: list.filter(i => i.isPaused).length
+    paused: list.filter(i => i.isPaused).length,
+    arbitrage: list.filter(i => i.canArbitrage).length
   }
 })
 
 const summary = computed(() => store.summary)
+
+// 详情弹窗：净溢价（扣申购费 0.15%）
+const detailNetPremium = computed(() => {
+  if (!detailData.value) return 0
+  return detailData.value.premium - 0.15
+})
+
+// 详情弹窗：一拖一账户申购基数（限购时为限额，否则 10000）
+const detailOneBase = computed(() => {
+  if (!detailData.value) return 10000
+  const limit = detailData.value.limitAmount
+  return limit && limit > 0 ? limit : 10000
+})
+
+// 详情弹窗：一拖一账户预期收益金额
+const detailOneProfit = computed(() => {
+  if (!detailData.value) return 0
+  return detailOneBase.value * detailNetPremium.value / 100
+})
+
+// 详情弹窗：一拖一账户预期收益文案（含高亮金额）
+const detailOneText = computed(() => {
+  if (!detailData.value) return ''
+  const np = detailNetPremium.value
+  const profit = detailOneProfit.value.toFixed(2)
+  const limit = detailData.value.limitAmount
+  if (limit && limit > 0) {
+    return `限购 ${limit} 元，预期收益 = ${limit} × ${np.toFixed(2)} / 100 = <span class="profit-num">${profit} 元</span>`
+  }
+  return `按 10000 元申购计算，预期收益 = <span class="profit-num">${profit} 元</span>`
+})
+
+// 详情弹窗：一拖六账户预期收益金额（仅限购 100 场景）
+const detailSixProfit = computed(() => {
+  if (!detailData.value) return 0
+  return 6 * 100 * detailNetPremium.value / 100
+})
+
+// 详情弹窗：操作建议分段（按句号拆分）
+const adviceParagraphs = computed(() => {
+  if (!detailData.value?.advice) return []
+  return detailData.value.advice
+    .split('。')
+    .map(s => s.trim())
+    .filter(s => s.length > 0)
+    .map(s => s + '。')
+})
+
+// 详情弹窗：限额说明文案
+const limitDescText = computed(() => {
+  if (!detailData.value) return ''
+  const status = detailData.value.limitStatus
+  if (status === '暂停') return '当前无法申购，关注恢复申购后的溢价变化'
+  if (status === '限100') return '单账户限购 100 元，可一拖六账户放大收益'
+  return '无申购限额，可按需申购'
+})
 
 function formatPremiumNum(val) {
   if (val == null || val === '--' || isNaN(val)) return '--'
@@ -661,6 +888,111 @@ onUnmounted(() => {
     font-size: 13px;
     color: var(--text-color);
     line-height: 1.6;
+
+    p {
+      margin: 0 0 6px 0;
+      &:last-child { margin-bottom: 0; }
+    }
+  }
+
+  /* 套利机会 Tab：预期收益与风险提示 */
+  .expected-return {
+    color: var(--el-color-success);
+    font-weight: 600;
+  }
+
+  .risk-empty {
+    color: var(--text-color-secondary);
+    font-size: 13px;
+  }
+
+  /* 详情弹窗：卡片区域 */
+  .detail-card {
+    margin-bottom: 18px;
+    border-radius: 8px;
+
+    :deep(.el-card__header) {
+      padding: 10px 16px;
+    }
+
+    :deep(.el-card__body) {
+      padding: 12px 16px;
+    }
+
+    .card-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-color);
+      padding-left: 8px;
+      border-left: 3px solid var(--el-color-primary);
+    }
+  }
+
+  .calc-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+
+    .calc-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 13px;
+
+      &.calc-row-text {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+      }
+
+      .calc-label {
+        color: var(--text-color-secondary);
+        flex-shrink: 0;
+      }
+
+      .calc-value {
+        font-weight: 600;
+        color: var(--text-color);
+
+        &.net-profit {
+          color: var(--el-color-success);
+        }
+      }
+
+      .calc-value-text {
+        color: var(--text-color);
+        line-height: 1.6;
+        word-break: break-all;
+
+        :deep(.profit-num),
+        .profit-num {
+          color: var(--el-color-danger);
+          font-weight: 700;
+        }
+      }
+    }
+
+    .calc-tip {
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--el-color-warning);
+      background: var(--el-color-warning-light-9);
+      border-radius: 4px;
+      padding: 6px 10px;
+    }
+  }
+
+  .limit-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+
+    .limit-desc {
+      font-size: 13px;
+      color: var(--text-color);
+    }
   }
 
   /* 响应式 */

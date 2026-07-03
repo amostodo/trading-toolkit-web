@@ -199,12 +199,16 @@ function normalizePendingItem(item) {
 
   const riskLabel = riskLevel === 'high' ? '高风险' : riskLevel === 'low' ? '低风险' : '中风险'
 
-  // 综合排序分（百元含权50% + 安全垫30% + 发行规模20%）
-  const _compositeRankRaw = Math.round(
-    Math.min(cashRatio / 30, 1) * 50 +
-    Math.min(_safetyPadValue / 10, 1) * 30 +
-    Math.max(0, Math.min((10 - issueSize) / 8, 1)) * 20
-  )
+  // 综合排序分（直接使用后端 strategy_score，0-100）
+  const _compositeRankRaw = item.strategy_score ?? 0
+
+  // 流通盘 & 策略评级（后端新增字段）
+  const floatShares = item.float_shares != null ? item.float_shares.toFixed(2) + '亿' : '--'
+  const _floatSharesRaw = item.float_shares ?? 0
+  const strategyScore = item.strategy_score ?? 0
+  const strategyRating = item.strategy_rating === 'recommend' ? '推荐'
+    : item.strategy_rating === 'watch' ? '可关注' : '谨慎'
+  const strategyRatingClass = item.strategy_rating || 'caution'
 
   // 发行时间轴
   let currentStageIndex = 0
@@ -258,6 +262,11 @@ function normalizePendingItem(item) {
     oneHandParty,
     safetyPad: _safetyPadValue > 0 ? _safetyPadValue.toFixed(2) + '%' : '--',
     _safetyPadRaw: _safetyPadValue,
+    floatShares,
+    _floatSharesRaw,
+    strategyScore,
+    strategyRating,
+    strategyRatingClass,
     _compositeRankRaw,
     progressClass: progress.includes('申购') || progress.includes('上市') ? 'hot' : 'warm',
     stageDot: status === '申购中' || status === '待上市' ? 'dot-final'
@@ -268,6 +277,10 @@ function normalizePendingItem(item) {
       bondName: bondName || '暂无', bondCode: bondCode || '暂无',
       progress, status,
       regDate: regDate || '暂无',
+      regDateRaw: regDate,
+      applyDate: item.apply_date || '',
+      listDate: item.list_date || '',
+      progressDt: item.progress_dt || '',
       issueSize: issueSize ? issueSize.toFixed(2) + '亿元' : '暂无',
       rating: rating || '暂无',
       shareholderRatio: shareholderRatio ? shareholderRatio.toFixed(1) + '%' : '暂无',

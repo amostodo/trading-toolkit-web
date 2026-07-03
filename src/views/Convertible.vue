@@ -113,10 +113,27 @@
             </div>
           </template>
         </el-table-column>
+        <el-table-column label="评级" width="80" align="center">
+          <template #default="{ row }">
+            <el-tag :class="`rating-tag rating-${row.strategyRatingClass}`" size="small">
+              {{ row.strategyRating }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="百元含权" width="100" align="right">
+          <template #header>
+            <el-tooltip content="每股配售金额 × 100 / 正股价格" placement="top">
+              <span>百元含权 ℹ️</span>
+            </el-tooltip>
+          </template>
           <template #default="{ row }"><span class="hl">{{ row.cashRatio }}</span></template>
         </el-table-column>
         <el-table-column label="安全垫" width="100" align="right">
+          <template #header>
+            <el-tooltip content="预估获利(1000×20%) / (配10张股数 × 股价) × 100%" placement="top">
+              <span>安全垫 ℹ️</span>
+            </el-tooltip>
+          </template>
           <template #default="{ row }"><span :class="safetyPadClass(row._safetyPadRaw)">{{ row.safetyPad }}</span></template>
         </el-table-column>
         <el-table-column label="预估收益" width="100" align="right">
@@ -132,6 +149,14 @@
         <el-table-column label="规模" width="90" align="right">
           <template #default="{ row }">{{ row.issueSize }}</template>
         </el-table-column>
+        <el-table-column label="流通盘" width="100" align="right">
+          <template #header>
+            <el-tooltip content="发行规模 × (1 - 股东配售率%) 或 网上发行规模" placement="top">
+              <span>流通盘 ℹ️</span>
+            </el-tooltip>
+          </template>
+          <template #default="{ row }">{{ row.floatShares }}</template>
+        </el-table-column>
       </el-table>
 
       <!-- 移动端卡片 -->
@@ -140,6 +165,7 @@
           <div class="mc-head">
             <span class="exchange-badge" :class="exchangeClass(row.exchange)" v-if="row.exchange">{{ row.exchange }}</span>
             <span class="bond-name">{{ row.stockName }}</span>
+            <el-tag :class="`rating-tag rating-${row.strategyRatingClass}`" size="small">{{ row.strategyRating }}</el-tag>
             <el-tag v-if="row.regBadge" size="small" :type="row.regBadgeClass === 'hot' ? 'danger' : 'warning'" effect="dark">{{ row.regBadge }}</el-tag>
             <el-tag v-if="row.riskLevel" size="small" :type="riskTagType(row.riskClass)" effect="light">{{ row.riskLabel }}</el-tag>
           </div>
@@ -154,6 +180,7 @@
             <div><span class="mc-label">安全垫</span><span :class="safetyPadClass(row._safetyPadRaw)">{{ row.safetyPad }}</span></div>
             <div><span class="mc-label">收益</span><span class="hl">{{ row.expectedProfit }}</span></div>
             <div><span class="mc-label">规模</span>{{ row.issueSize }}</div>
+            <div><span class="mc-label">流通盘</span>{{ row.floatShares }}</div>
           </div>
         </el-card>
       </div>
@@ -269,7 +296,13 @@
         <div class="detail-section">
           <div class="detail-section-title">发行时间轴</div>
           <el-steps :active="currentStageIndex" align-center finish-status="success">
-            <el-step v-for="(s, i) in pendingDetail.stageList" :key="i" :title="s.name" />
+            <el-step v-for="(s, i) in pendingDetail.stageList" :key="i" :title="s.name">
+              <template #description>
+                <div v-if="getStageDate(i)" class="stage-date">{{ getStageDate(i) }}</div>
+                <div v-if="getStageDaysLabel(i)" class="stage-days" :class="getStageDaysClass(i)">{{ getStageDaysLabel(i) }}</div>
+                <div v-if="getStageRegInfo(i)" class="stage-reg-info">{{ getStageRegInfo(i) }}</div>
+              </template>
+            </el-step>
           </el-steps>
         </div>
 
@@ -442,8 +475,33 @@ const extraConfig = computed(() => {
 
 const rawSignalList = computed(() => store.signals[activeTab.value] || [])
 const needShowAll = computed(() => rawSignalList.value.length > 15)
+
+// 视图层按 Tab 类型默认排序（覆盖 store 的 sortByBest）
+// - 双低：double_low 升序（值越小越优）
+// - 强赎：_forcePriceGap 降序（越接近/已触发强赎排前）
+// - 折价：折价空间降序（折价越大排前）
+// - 下修：_revisePriceGap 升序（最接近下修排前）
+function discountRank(item) {
+  const p = item.premiumNum
+  // 仅当溢价为负（折价）时计算折价空间，无折价者排末尾
+  return p != null && p < 0 ? Math.abs(p) : -1
+}
+
+const sortedSignalList = computed(() => {
+  const list = rawSignalList.value
+  const tab = activeTab.value
+  if (!list || list.length <= 1) return list || []
+  return [...list].sort((a, b) => {
+    if (tab === 'double_low') return (a.doubleLowNum ?? 9999) - (b.doubleLowNum ?? 9999)
+    if (tab === 'force_redeem') return (b._forcePriceGap ?? -9999) - (a._forcePriceGap ?? -9999)
+    if (tab === 'discount') return discountRank(b) - discountRank(a)
+    if (tab === 'down_revised') return (a._revisePriceGap ?? 9999) - (b._revisePriceGap ?? 9999)
+    return 0
+  })
+})
+
 const signalList = computed(() => {
-  let list = rawSignalList.value
+  let list = sortedSignalList.value
   if (!showAll.value && needShowAll.value) list = list.slice(0, 15)
   return matchSearch(list)
 })
@@ -453,6 +511,59 @@ const currentStageIndex = computed(() => {
   const idx = list.findIndex(s => s.status === 'current')
   return idx >= 0 ? idx : 0
 })
+
+// ALL_STAGES 索引：5=申购中、6=待上市
+const STAGE_INDEX_APPLY = 5
+const STAGE_INDEX_LIST = 6
+
+function daysDiff(dateStr) {
+  if (!dateStr) return null
+  const today = new Date().toISOString().slice(0, 10)
+  const diff = Math.ceil((new Date(dateStr) - new Date(today)) / 86400000)
+  return Number.isFinite(diff) ? diff : null
+}
+
+function getStageDate(i) {
+  const d = pendingDetail.value
+  if (!d) return ''
+  if (i === STAGE_INDEX_APPLY) return d.applyDate || ''
+  if (i === STAGE_INDEX_LIST) return d.listDate || ''
+  return ''
+}
+
+function getStageDaysLabel(i) {
+  const dateStr = getStageDate(i)
+  if (!dateStr) return ''
+  const diff = daysDiff(dateStr)
+  if (diff === null) return ''
+  const label = i === STAGE_INDEX_APPLY ? '申购' : i === STAGE_INDEX_LIST ? '上市' : ''
+  if (diff === 0) return `今日${label}`
+  if (diff > 0) return `${label} +${diff}天`
+  return `${label} ${diff}天`
+}
+
+function getStageDaysClass(i) {
+  const dateStr = getStageDate(i)
+  if (!dateStr) return ''
+  const diff = daysDiff(dateStr)
+  if (diff === null) return ''
+  if (diff === 0) return 'today'
+  if (diff > 0) return 'future'
+  return 'past'
+}
+
+// 登记日信息（附在申购中节点下展示）
+function getStageRegInfo(i) {
+  const d = pendingDetail.value
+  if (!d || i !== STAGE_INDEX_APPLY) return ''
+  const regRaw = d.regDateRaw
+  if (!regRaw) return ''
+  const diff = daysDiff(regRaw)
+  if (diff === null) return ''
+  if (diff === 0) return '今日登记'
+  if (diff > 0) return `登记日 +${diff}天`
+  return `登记日 ${diff}天`
+}
 
 const liveSafetyPad = computed(() => {
   const sp = pendingDetail.value?._safetyPadRaw || 0
@@ -778,6 +889,24 @@ onUnmounted(() => {
     &.ex-bj { background: #531dab; }
   }
 
+  /* 评级 tag：推荐绿/可关注黄/谨慎红，兼容暗黑模式 */
+  .rating-tag {
+    border: none;
+
+    &.rating-recommend {
+      background-color: var(--el-color-success);
+      color: #fff;
+    }
+    &.rating-watch {
+      background-color: var(--el-color-warning);
+      color: #fff;
+    }
+    &.rating-caution {
+      background-color: var(--el-color-danger);
+      color: #fff;
+    }
+  }
+
   .fav-icon {
     cursor: pointer;
     color: var(--el-border-color);
@@ -832,6 +961,37 @@ onUnmounted(() => {
       font-size: 13px;
       color: var(--text-color-secondary);
     }
+  }
+
+  /* 发行时间轴节点描述 */
+  .stage-date {
+    font-size: 12px;
+    color: var(--text-color-secondary);
+    line-height: 1.4;
+  }
+
+  .stage-days {
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.4;
+    margin-top: 2px;
+
+    &.today {
+      color: var(--el-color-danger);
+    }
+    &.future {
+      color: var(--el-color-warning);
+    }
+    &.past {
+      color: var(--text-color-secondary);
+    }
+  }
+
+  .stage-reg-info {
+    font-size: 11px;
+    line-height: 1.4;
+    margin-top: 2px;
+    color: var(--el-color-warning);
   }
 
   .slider-row {
