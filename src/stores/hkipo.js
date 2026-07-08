@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { hkipoApi } from '@/api/hkipo'
+import { useAppStore } from '@/stores/app'
 
 function safeNum(val, def = 0) {
   return typeof val === 'number' && !isNaN(val) ? val : def
@@ -27,14 +28,14 @@ function normalizeIpoItem(raw) {
     applyDate: raw.apply_date || '',
     payDate: raw.pay_date || '',
     listDate: raw.list_date || '',
-    winRate: raw.win_rate || '',
-    peRatio: raw.pe_ratio || '',
-    industryPe: raw.industry_pe || '',
+    winRate: raw.win_rate != null ? raw.win_rate : '',
+    peRatio: raw.pe_ratio != null ? raw.pe_ratio : '',
+    industryPe: raw.industry_pe != null ? raw.industry_pe : '',
     peDiff,
     peRating: getPeRating(peDiff),
-    firstDayGain: raw.first_day_gain || '',
-    plateGain: raw.plate_gain || '',
-    continuousDays: raw.continuous_days || '',
+    firstDayGain: raw.first_day_gain != null ? raw.first_day_gain : '',
+    plateGain: raw.plate_gain != null ? raw.plate_gain : '',
+    continuousDays: raw.continuous_days != null ? raw.continuous_days : '',
     status: raw.status || 'pending',
   }
 }
@@ -45,6 +46,9 @@ export const useHkipoStore = defineStore('hkipo', () => {
   const summary = ref(null)
   const currentDetail = ref(null)
   const loading = ref(false)
+  const tier = 'beginner'
+  const threshold = 10000
+  const lastUpdated = ref(null)
 
   const upcomingCount = computed(() => summary.value?.upcoming_count ?? 0)
   const recentCount = computed(() => summary.value?.recent_count ?? 0)
@@ -56,6 +60,8 @@ export const useHkipoStore = defineStore('hkipo', () => {
       const data = await hkipoApi.list()
       const arr = Array.isArray(data) ? data : (data.items || [])
       ipoList.value = arr.map(normalizeIpoItem).filter(Boolean)
+      lastUpdated.value = new Date().toISOString()
+      useAppStore().setLastUpdated()
     } finally {
       loading.value = false
     }
@@ -94,6 +100,7 @@ export const useHkipoStore = defineStore('hkipo', () => {
   return {
     ipoList, upcomingList, summary, currentDetail, loading,
     upcomingCount, recentCount, totalCount,
+    tier, threshold, lastUpdated,
     loadIpoList, loadUpcoming, loadSummary, loadDetail,
   }
 })

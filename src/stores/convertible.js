@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { convertibleApi } from '@/api/convertible'
 import { marketApi } from '@/api/market'
 import { useUserStore } from '@/stores/user'
+import { useAppStore } from '@/stores/app'
 
 // 交易所判定
 function detectExchange(stockCode = '', bondCode = '') {
@@ -15,6 +16,40 @@ function detectExchange(stockCode = '', bondCode = '') {
 }
 
 const ALL_STAGES = ['董事会预案', '股东大会批准', '交易所受理', '上市委通过', '同意注册', '申购中', '待上市']
+
+// progress_full 中的阶段名 → ALL_STAGES 名称映射
+const STAGE_NAME_ALIASES = {
+  '董事会预案': '董事会预案',
+  '股东大会通过': '股东大会批准',
+  '股东大会批准': '股东大会批准',
+  '交易所受理': '交易所受理',
+  '上市委通过': '上市委通过',
+  '同意注册': '同意注册',
+}
+
+function parseProgressDates(progressFull) {
+  const map = {}
+  if (!progressFull) return map
+  const lines = String(progressFull).split(/[\n,;]/)
+  for (const line of lines) {
+    const m = line.trim().match(/(\d{4}-\d{2}-\d{2})\s*(.*)/)
+    if (!m) continue
+    const date = m[1]
+    const stageText = m[2].trim()
+    for (const [alias, canonical] of Object.entries(STAGE_NAME_ALIASES)) {
+      if (stageText.includes(alias)) {
+        map[canonical] = date
+        break
+      }
+    }
+  }
+  return map
+}
+
+function stripHtml(text) {
+  if (!text) return text
+  return text.replace(/<[^>]*>/g, ' ')
+}
 
 const SECTOR_KEYWORDS = [
   { sector: 'AI/人工智能', keywords: ['智能', '科技', '信息', '数据', '软件', 'AI', '数字'], hot: true },
@@ -109,10 +144,10 @@ function normalizeBondItem(item) {
     priceNum,
     conversionValue: conversionValueNum ? conversionValueNum.toFixed(2) : '--',
     conversionValueNum,
-    premium: premiumRateNum !== 0 || item.premium_rate !== undefined ? premiumRateNum.toFixed(2) + '%' : '--',
+    premium: item.premium_rate != null ? premiumRateNum.toFixed(2) + '%' : '--',
     premiumClass: premiumRateNum < 0 ? 'negative' : premiumRateNum > 30 ? 'high' : '',
     premiumNum: premiumRateNum,
-    doubleLow: doubleLowNum ? doubleLowNum.toFixed(1) : '--',
+    doubleLow: doubleLowNum > 0 ? doubleLowNum.toFixed(1) : '--',
     doubleLowNum,
     conversionPrice: conversionPriceNum ? conversionPriceNum.toFixed(2) : '--',
     conversionPriceNum,
@@ -129,9 +164,9 @@ function normalizeBondItem(item) {
     _revisePriceGap,
     discountSpace,
     discountClass,
-    hundredRight: hundredRightValue ? hundredRightValue.toFixed(2) : '--',
-    lotStock: lotStockCount ? lotStockCount + '股' : '--',
-    safetyPad: safetyPadValue ? safetyPadValue.toFixed(1) + '%' : '--',
+    hundredRight: hundredRightValue != null ? hundredRightValue.toFixed(2) : '--',
+    lotStock: lotStockCount != null ? lotStockCount + '股' : '--',
+    safetyPad: safetyPadValue != null ? safetyPadValue.toFixed(1) + '%' : '--',
     isFavorite: false,
     rawPremium: premiumRateNum
   }
@@ -145,7 +180,7 @@ function normalizePendingItem(item) {
   const bondCode = item.bond_code || ''
   const bondName = item.bond_name || ''
   const status = item.status || '--'
-  const progress = item.progress || status
+  const progress = stripHtml(item.progress) || status
   const issueSize = item.issue_size || 0
   const rating = item.rating || ''
   const shareholderRatio = item.shareholder_ratio || 0
@@ -179,11 +214,12 @@ function normalizePendingItem(item) {
 
   const exchange = detectExchange(stockCode, bondCode)
 
-  // 登记日徽标
+  // 登记日徽标：仅在申购日未过期时显示
   const today = new Date().toISOString().slice(0, 10)
+  const applyDate = item.apply_date || ''
   let regBadge = ''
   let regBadgeClass = ''
-  if (regDate) {
+  if (regDate && (!applyDate || applyDate >= today)) {
     if (regDate === today) { regBadge = '今日登记'; regBadgeClass = 'hot' }
     else if (regDate > today) {
       const diff = Math.ceil((new Date(regDate) - new Date()) / 86400000)
@@ -210,7 +246,11 @@ function normalizePendingItem(item) {
     : item.strategy_rating === 'watch' ? '可关注' : '谨慎'
   const strategyRatingClass = item.strategy_rating || 'caution'
 
-  // 发行时间轴
+  // 发行时间轴 — 解析 progress_full 提取各阶段日期
+  const stageDateMap = parseProgressDates(item.progress_full || '')
+  if (item.apply_date) stageDateMap['申购中'] = item.apply_date
+  if (item.list_date) stageDateMap['待上市'] = item.list_date
+
   let currentStageIndex = 0
   if (status && status !== '--') {
     const idx = ALL_STAGES.indexOf(status)
@@ -218,6 +258,7 @@ function normalizePendingItem(item) {
   }
   const stageList = ALL_STAGES.map((name, i) => ({
     name,
+    date: stageDateMap[name] || '',
     status: i < currentStageIndex ? 'done' : i === currentStageIndex ? 'current' : 'pending'
   }))
 
@@ -226,7 +267,8 @@ function normalizePendingItem(item) {
   return {
     stockName, stockCode, exchange,
     stockPrice: stockPrice ? stockPrice.toFixed(2) : '--',
-    stockChange: stockChange ? (stockChange >= 0 ? '+' : '') + stockChange.toFixed(2) + '%' : '--',
+    _stockPriceRaw: stockPrice,
+    stockChange: stockChange != null ? (stockChange >= 0 ? '+' : '') + stockChange.toFixed(2) + '%' : '--',
     stockChangeUp: stockChange >= 0,
     _stockChangeRaw: stockChange,
     bondName: bondName || '--',
@@ -235,22 +277,25 @@ function normalizePendingItem(item) {
     issueSize: issueSize ? issueSize.toFixed(2) + '亿' : '--',
     _issueSizeRaw: issueSize,
     rating: rating || '--',
-    shareholderRatio: shareholderRatio ? shareholderRatio.toFixed(1) + '%' : '--',
+    shareholderRatio: shareholderRatio != null ? shareholderRatio.toFixed(1) + '%' : '--',
+    _shareholderRatioRaw: shareholderRatio,
     conversionPrice: conversionPrice ? conversionPrice.toFixed(2) : '--',
     pb: pb ? pb.toFixed(2) : '--',
-    cashRatio: cashRatio ? cashRatio.toFixed(2) + '元' : '--',
+    cashRatio: cashRatio != null ? cashRatio.toFixed(2) + '元' : '--',
     _cashRatioRaw: cashRatio,
     perShare: perShare ? perShare.toFixed(4) + '元' : '--',
+    _perShareRaw: perShare,
     sharesFor10: sharesFor10 ? sharesFor10 + '股' : '--',
     _sharesFor10Raw: sharesFor10,
     costFor10Lots: _costFor10LotsRaw > 0 ? Math.round(_costFor10LotsRaw) + '元' : '--',
     _costFor10LotsRaw,
     _oneHandMinShares,
     oneHandMinCost: _oneHandMinShares > 0 ? Math.round(_oneHandMinShares * stockPrice) + '元' : '',
+    _oneHandMinCostRaw: _oneHandMinShares > 0 ? Math.round(_oneHandMinShares * stockPrice) : 0,
     regDate: regDate || '--',
     regBadge, regBadgeClass,
     onlineIssueSize: onlineIssueSize ? onlineIssueSize.toFixed(2) + '亿' : '--',
-    winRate: winRate ? (winRate * 100).toFixed(3) + '%' : '--',
+    winRate: winRate != null ? (winRate * 100).toFixed(3) + '%' : '--',
     riskLevel,
     riskLabel,
     riskClass: riskLevel,
@@ -269,6 +314,8 @@ function normalizePendingItem(item) {
     strategyRatingClass,
     _compositeRankRaw,
     progressClass: progress.includes('申购') || progress.includes('上市') ? 'hot' : 'warm',
+    _applyDate: item.apply_date || '',
+    _listDate: item.list_date || '',
     stageDot: status === '申购中' || status === '待上市' ? 'dot-final'
       : status === '同意注册' || status === '上市委通过' ? 'dot-mid'
         : status === '交易所受理' ? 'dot-early' : 'dot-first',
@@ -283,16 +330,16 @@ function normalizePendingItem(item) {
       progressDt: item.progress_dt || '',
       issueSize: issueSize ? issueSize.toFixed(2) + '亿元' : '暂无',
       rating: rating || '暂无',
-      shareholderRatio: shareholderRatio ? shareholderRatio.toFixed(1) + '%' : '暂无',
+      shareholderRatio: shareholderRatio != null ? shareholderRatio.toFixed(1) + '%' : '暂无',
       conversionPrice: conversionPrice ? conversionPrice.toFixed(2) + '元' : '暂无',
       stockPrice: stockPrice ? stockPrice.toFixed(2) + '元' : '暂无',
-      stockChange: stockChange ? (stockChange >= 0 ? '+' : '') + stockChange.toFixed(2) + '%' : '暂无',
+      stockChange: stockChange != null ? (stockChange >= 0 ? '+' : '') + stockChange.toFixed(2) + '%' : '暂无',
       pb: pb ? pb.toFixed(2) : '暂无',
-      cashRatio: cashRatio ? cashRatio.toFixed(2) + '元/百元' : '暂无',
+      cashRatio: cashRatio != null ? cashRatio.toFixed(2) + '元/百元' : '暂无',
       perShare: perShare ? perShare.toFixed(4) + '元' : '暂无',
       sharesFor10: sharesFor10 ? sharesFor10 + '股' : '暂无',
       onlineIssueSize: onlineIssueSize ? onlineIssueSize.toFixed(2) + '亿元' : '暂无',
-      winRate: winRate ? (winRate * 100).toFixed(3) + '%' : '暂无',
+      winRate: winRate != null ? (winRate * 100).toFixed(3) + '%' : '暂无',
       riskLevel, riskLabel, riskClass: riskLevel,
       safetyPad: _safetyPadValue > 0 ? _safetyPadValue.toFixed(2) + '%' : '暂无',
       _safetyPadRaw: _safetyPadValue,
@@ -331,6 +378,9 @@ export const useConvertibleStore = defineStore('convertible', () => {
   const pendingList = ref([])
   const temperature = ref(null)
   const marketTemp = ref(null)
+  const tier = 'beginner'
+  const threshold = 10000
+  const lastUpdated = ref(null)
   const loading = ref(false)
   const error = ref(null)
   const pagination = ref({ page: 1, pageSize: 20, total: 0 })
@@ -358,7 +408,18 @@ export const useConvertibleStore = defineStore('convertible', () => {
       normalized.placement = (rawSignals?.double_low || []).slice(0, 10).map(normalizeBondItem)
     }
     signals.value = normalized
-    pendingList.value = (pending || []).map(normalizePendingItem).filter(Boolean)
+    const today = new Date().toISOString().slice(0, 10)
+    pendingList.value = (pending || [])
+      .map(normalizePendingItem)
+      .filter(Boolean)
+      .filter(item => {
+        // 过滤已过期标的：申购日已过且仍为申购中，或上市日已过且仍为待上市
+        if (item._status === '申购中' && item._applyDate && item._applyDate < today) return false
+        if (item._status === '待上市' && item._listDate && item._listDate < today) return false
+        // 过滤已过股权登记日的标的（登记日过了就不能参与配售了）
+        if (item.regDate && item.regDate !== '--' && item.regDate < today) return false
+        return true
+      })
   }
 
   function applyMarketTemp(rawSignals, overview) {
@@ -414,6 +475,8 @@ export const useConvertibleStore = defineStore('convertible', () => {
           }
         } catch (e) { /* ignore */ }
       }
+      lastUpdated.value = new Date().toISOString()
+      useAppStore().setLastUpdated()
     } catch (err) {
       error.value = err?.message || '加载失败'
     } finally {
@@ -447,6 +510,7 @@ export const useConvertibleStore = defineStore('convertible', () => {
 
   return {
     bondList, signals, pendingList, temperature, marketTemp, loading, error, pagination,
+    tier, threshold, lastUpdated,
     loadBonds, loadAll, loadSignals, loadTemperature, refreshFavorites
   }
 })

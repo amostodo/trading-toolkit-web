@@ -26,6 +26,10 @@
           <el-icon><Money /></el-icon>
           <template #title>LOF 基金</template>
         </el-menu-item>
+        <el-menu-item index="/closed-end">
+          <el-icon><Lock /></el-icon>
+          <template #title>封闭式基金</template>
+        </el-menu-item>
         <el-menu-item index="/hkipo">
           <el-icon><Ship /></el-icon>
           <template #title>港股打新</template>
@@ -62,6 +66,9 @@
           </el-breadcrumb>
         </div>
         <div class="header-right">
+          <span v-if="appStore.lastUpdated" class="header-update">
+            更新于 <TimeStamp :time="appStore.lastUpdated" :stale-after="60" />
+          </span>
           <el-tooltip :content="appStore.isDarkMode ? '切换明亮' : '切换暗黑'" placement="bottom">
             <el-icon :size="20" class="header-action" @click="appStore.toggleDarkMode()">
               <Moon v-if="!appStore.isDarkMode" />
@@ -72,22 +79,48 @@
       </el-header>
 
       <el-main class="layout-main">
-        <router-view />
+        <router-view v-slot="{ Component }">
+          <component :is="Component" />
+        </router-view>
       </el-main>
     </el-container>
   </el-container>
+
+  <!-- 全局悬浮工具栏 -->
+  <FloatToolbar />
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
-import { HomeFilled, TrendCharts, Money, Ship, StarFilled, Setting, Fold, Expand, Moon, Sunny, Coin, ChatLineRound, Document } from '@element-plus/icons-vue'
+import { useFloatingStore } from '@/stores/floating'
+import { HomeFilled, TrendCharts, Money, Ship, StarFilled, Setting, Fold, Expand, Moon, Sunny, Coin, ChatLineRound, Document, Lock } from '@element-plus/icons-vue'
+import FloatToolbar from '@/components/floating/FloatToolbar.vue'
+import TimeStamp from '@/components/TimeStamp.vue'
 
 const route = useRoute()
 const router = useRouter()
 const appStore = useAppStore()
+const floatStore = useFloatingStore()
 const isCollapse = ref(false)
+
+// 路由切换时自动绑定当前策略
+const strategyMap = {
+  '/lof': 'LOF 基金套利',
+  '/convertible': '可转债',
+  '/hkipo': '港股打新',
+  '/closed-end': '封闭式基金折价套利'
+}
+watch(() => route.path, (path) => {
+  for (const [prefix, name] of Object.entries(strategyMap)) {
+    if (path.startsWith(prefix)) {
+      floatStore.setStrategy(name)
+      return
+    }
+  }
+  floatStore.setStrategy('')
+}, { immediate: true })
 </script>
 
 <style lang="scss" scoped>
@@ -144,6 +177,11 @@ const isCollapse = ref(false)
     display: flex;
     align-items: center;
     gap: 12px;
+
+    .header-update {
+      font-size: 12px;
+      color: var(--text-color-secondary);
+    }
 
     .header-action {
       cursor: pointer;

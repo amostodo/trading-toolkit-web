@@ -32,6 +32,12 @@ const routes = [
         meta: { title: 'LOF 基金' }
       },
       {
+        path: 'closed-end',
+        name: 'ClosedEnd',
+        component: () => import('@/views/ClosedEnd.vue'),
+        meta: { title: '封闭式基金' }
+      },
+      {
         path: 'hkipo',
         name: 'Hkipo',
         component: () => import('@/views/Hkipo.vue'),

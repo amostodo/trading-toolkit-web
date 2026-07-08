@@ -2,6 +2,7 @@
   <div class="page-container lof-page">
     <div class="page-header page-header-flex">
       <h2>LOF 基金套利</h2>
+      <TierBadge :tier="store.tier" :threshold="store.threshold" />
       <el-input
         v-model="searchKeyword"
         class="search-input"
@@ -16,6 +17,7 @@
     <div class="market-overview" v-loading="store.loading && !store.summary">
       <div class="overview-header">
         <span class="overview-title">市场概览</span>
+        <TimeStamp v-if="store.lastUpdated" :time="store.lastUpdated" :stale-after="30" />
       </div>
       <div class="overview-grid">
         <div class="overview-item">
@@ -67,6 +69,70 @@
       show-icon
     />
 
+    <!-- 策略沙盘：参数敏感度分析 -->
+    <el-card class="sandbox-card" shadow="never">
+      <template #header>
+        <div class="sandbox-header" @click="sandboxOpen = !sandboxOpen">
+          <span class="sandbox-title">策略沙盘 · 敏感度分析</span>
+          <el-icon class="sandbox-toggle" :class="{ expanded: sandboxOpen }"><ArrowDown /></el-icon>
+        </div>
+      </template>
+      <transition name="expand">
+        <div v-show="sandboxOpen" class="sandbox-body">
+          <div class="sandbox-sliders">
+            <SensitivitySlider
+              v-model="sandbox.premium"
+              label="溢价率"
+              :min="0"
+              :max="20"
+              :step="0.1"
+              unit="%"
+            />
+            <SensitivitySlider
+              v-model="sandbox.amount"
+              label="申购金额"
+              :min="1000"
+              :max="100000"
+              :step="1000"
+              :format-fn="v => (v / 10000).toFixed(1) + ' 万'"
+            />
+            <SensitivitySlider
+              v-model="sandbox.feeRate"
+              label="申购费率"
+              :min="0"
+              :max="1"
+              :step="0.01"
+              unit="%"
+            />
+          </div>
+          <div class="sandbox-result">
+            <div class="result-row">
+              <span class="result-label">套利收益</span>
+              <span class="result-value" :class="{ positive: sandboxProfit > 0, negative: sandboxProfit < 0 }">
+                {{ sandboxProfit.toFixed(2) }} 元
+              </span>
+            </div>
+            <div class="result-row">
+              <span class="result-label">净溢价</span>
+              <span class="result-value" :class="{ positive: sandboxNetPremium > 0 }">
+                {{ sandboxNetPremium.toFixed(2) }}%
+              </span>
+            </div>
+            <div class="result-row">
+              <span class="result-label">收益率</span>
+              <span class="result-value" :class="{ positive: sandboxProfit > 0 }">
+                {{ sandboxROI.toFixed(2) }}%
+              </span>
+            </div>
+            <div class="result-tip">
+              <span v-if="sandboxNetPremium > 0">净溢价为正，存在套利空间</span>
+              <span v-else style="color: var(--el-color-danger)">净溢价为负，无套利空间</span>
+            </div>
+          </div>
+        </div>
+      </transition>
+    </el-card>
+
     <!-- 桌面表格 -->
     <el-table
       v-if="activeTab !== 'arbitrage'"
@@ -100,7 +166,14 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="溢价率" width="110" align="right" sortable :sort-by="'premium'">
+      <el-table-column width="110" align="right" sortable :sort-by="'premium'">
+        <template #header>
+          溢价率<FormulaInfo
+            formula="(场内价格 - 基金净值) / 基金净值 × 100%"
+            example="价格 1.05，净值 1.00 → 溢价率 = 5%"
+            note="溢价率 > 0 表示场内贵，可申购套利"
+          />
+        </template>
         <template #default="{ row }">
           <span
             class="premium-value"
@@ -108,7 +181,14 @@
           >{{ row.premiumText }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="净溢价" width="110" align="right">
+      <el-table-column width="110" align="right">
+        <template #header>
+          净溢价<FormulaInfo
+            formula="净溢价 = 溢价率 - 申购费率 - 卖出佣金率"
+            example="5% - 0.15% - 0.05% = 4.80%"
+            note="净溢价 > 0 才有套利空间"
+          />
+        </template>
         <template #default="{ row }">
           <span
             class="premium-value"
@@ -250,9 +330,9 @@
           <span :class="amountClass(row)">{{ row.amountText }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="预期收益" width="110" align="right">
+      <el-table-column label="净溢价" width="110" align="right">
         <template #default="{ row }">
-          <span class="expected-return">{{ (row.premium - 0.15).toFixed(2) }}%</span>
+          <span class="expected-return">{{ row.netPremiumText }}</span>
         </template>
       </el-table-column>
       <el-table-column label="风险提示" width="220">
@@ -302,8 +382,8 @@
             <span :class="amountClass(row)">{{ row.amountText }}</span>
           </div>
           <div class="mc-metric">
-            <span class="mc-label">预期收益</span>
-            <span class="expected-return">{{ (row.premium - 0.15).toFixed(2) }}%</span>
+            <span class="mc-label">净溢价</span>
+            <span class="expected-return">{{ row.netPremiumText }}</span>
           </div>
         </div>
         <div class="mc-tags" v-if="row.lowLiquidity || row.sustainedPremium || row.limitAmount">
@@ -452,15 +532,23 @@
         </el-card>
       </template>
     </el-dialog>
+
+    <!-- 公式回忆（检索练习） -->
+    <FormulaRecall :items="recallItems" />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onActivated, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Search, Star, StarFilled } from '@element-plus/icons-vue'
+import { Search, Star, StarFilled, ArrowDown } from '@element-plus/icons-vue'
 import { useLofStore } from '@/stores/lof'
 import { useUserStore } from '@/stores/user'
+import TierBadge from '@/components/TierBadge.vue'
+import TimeStamp from '@/components/TimeStamp.vue'
+import FormulaInfo from '@/components/FormulaInfo.vue'
+import SensitivitySlider from '@/components/SensitivitySlider.vue'
+import FormulaRecall from '@/components/FormulaRecall.vue'
 
 const store = useLofStore()
 const userStore = useUserStore()
@@ -470,6 +558,27 @@ const searchKeyword = ref('')
 const detailVisible = ref(false)
 const detailData = ref(null)
 const isMobile = ref(false)
+
+// 策略沙盘
+const sandboxOpen = ref(false)
+const sandbox = ref({ premium: 5, amount: 10000, feeRate: 0.15 })
+const SELL_COMMISSION_RATE = 0.05
+const sandboxProfit = computed(() => {
+  const s = sandbox.value
+  return s.amount * s.premium / 100 - s.amount * s.feeRate / 100 - s.amount * SELL_COMMISSION_RATE / 100
+})
+const sandboxNetPremium = computed(() => sandbox.value.premium - sandbox.value.feeRate - SELL_COMMISSION_RATE)
+const sandboxROI = computed(() => {
+  const s = sandbox.value
+  return s.amount > 0 ? (sandboxProfit.value / s.amount * 100) : 0
+})
+
+// 公式回忆
+const recallItems = [
+  { prompt: '溢价率 = (____ - 基金净值) / 基金净值 × 100%', answer: '场内价格', placeholder: '缺失的项' },
+  { prompt: '净溢价 = 溢价率 - ____ - 卖出佣金率', answer: '申购费率', placeholder: '缺失的项' },
+  { prompt: '套利收益 = 申购金额 × ____ - 申购费 - 卖出佣金', answer: '溢价率', placeholder: '缺失的项' }
+]
 
 const tabs = [
   { key: 'all', label: '全部' },
@@ -752,6 +861,92 @@ onUnmounted(() => {
 
   .guide-alert {
     margin-bottom: 12px;
+  }
+
+  .sandbox-card {
+    margin-bottom: 12px;
+
+    .sandbox-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+
+      .sandbox-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-color);
+      }
+
+      .sandbox-toggle {
+        transition: transform 0.2s;
+        color: var(--text-color-secondary);
+
+        &.expanded {
+          transform: rotate(180deg);
+        }
+      }
+    }
+
+    .sandbox-body {
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+
+      .sandbox-sliders {
+        flex: 1;
+        min-width: 240px;
+      }
+
+      .sandbox-result {
+        min-width: 200px;
+        padding: 12px 16px;
+        background: var(--bg-color);
+        border-radius: 8px;
+
+        .result-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 8px;
+
+          .result-label {
+            font-size: 13px;
+            color: var(--text-color-secondary);
+          }
+
+          .result-value {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-color);
+
+            &.positive {
+              color: var(--el-color-danger);
+            }
+
+            &.negative {
+              color: var(--el-color-success);
+            }
+          }
+        }
+
+        .result-tip {
+          font-size: 12px;
+          color: var(--el-color-success);
+          margin-top: 4px;
+        }
+      }
+    }
+  }
+
+  .expand-enter-active, .expand-leave-active {
+    transition: all 0.2s ease;
+  }
+
+  .expand-enter-from, .expand-leave-to {
+    opacity: 0;
+    max-height: 0;
   }
 
   .name-cell {

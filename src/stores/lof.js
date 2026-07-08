@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { lofApi } from '@/api/lof'
 import { useUserStore } from '@/stores/user'
+import { useAppStore } from '@/stores/app'
 
 const PURCHASE_FEE = 0.15
 
@@ -152,6 +153,9 @@ export const useLofStore = defineStore('lof', () => {
   const opportunities = ref([])
   const loading = ref(false)
   const error = ref(null)
+  const tier = 'beginner'
+  const threshold = 10000
+  const lastUpdated = ref(null)
 
   async function loadList(params = {}) {
     loading.value = true
@@ -197,6 +201,8 @@ export const useLofStore = defineStore('lof', () => {
         const raw = listData.value.items || listData.value || []
         const normalized = raw.map(normalizeLofItem)
         fundList.value = normalized
+        lastUpdated.value = new Date().toISOString()
+        useAppStore().setLastUpdated()
 
         if (summaryResult.status === 'fulfilled' && summaryResult.value) {
           const s = summaryResult.value
@@ -230,6 +236,7 @@ export const useLofStore = defineStore('lof', () => {
 
   return {
     fundList, summary, opportunities, loading, error,
+    tier, threshold, lastUpdated,
     loadList, loadOpportunities, loadAll, refreshFavorites
   }
 })

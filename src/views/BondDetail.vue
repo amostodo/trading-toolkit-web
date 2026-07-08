@@ -8,6 +8,7 @@
       <h2 class="page-title">
         <el-tag v-if="d" :type="exchangeTagType" size="small" effect="dark">{{ exchangeLabel }}</el-tag>
         <span class="title-text">{{ d ? `${d.bond_name} ${d.bond_code}` : '可转债详情' }}</span>
+        <TierBadge tier="beginner" :threshold="10000" />
       </h2>
       <el-button
         v-if="d"
@@ -210,6 +211,7 @@ import { ArrowLeft, Star, StarFilled } from '@element-plus/icons-vue'
 import { convertibleApi } from '@/api/convertible'
 import { useUserStore } from '@/stores/user'
 import { formatNumber, formatDate, formatColor } from '@/utils/format'
+import TierBadge from '@/components/TierBadge.vue'
 
 const route = useRoute()
 const router = useRouter()

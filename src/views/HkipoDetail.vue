@@ -4,7 +4,7 @@
       <el-button text @click="router.back()">
         <el-icon><ArrowLeft /></el-icon> 返回
       </el-button>
-      <h2>{{ detail?.name || '新股详情' }}</h2>
+      <h2>{{ detail?.name || '新股详情' }} <TierBadge tier="beginner" :threshold="10000" /></h2>
     </div>
 
     <div v-loading="loading">
@@ -35,7 +35,7 @@
                 <el-descriptions-item label="中签缴款日">{{ detail.payDate || '--' }}</el-descriptions-item>
                 <el-descriptions-item label="上市日期">{{ detail.listDate || '未上市' }}</el-descriptions-item>
                 <el-descriptions-item label="中签率">
-                  <span v-if="detail.winRate">{{ detail.winRate }}%</span>
+                  <span v-if="detail.winRate !== ''">{{ detail.winRate }}%</span>
                   <span v-else class="text-muted">暂无</span>
                 </el-descriptions-item>
               </el-descriptions>
@@ -62,7 +62,7 @@
                 <div class="pe-item">
                   <div class="pe-label">差值</div>
                   <div class="pe-value" :class="peDiffClass">
-                    {{ detail.peDiff > 0 ? '+' : '' }}{{ detail.peDiff }}
+                    {{ detail.peDiff != null ? (detail.peDiff > 0 ? '+' : '') + detail.peDiff : '--' }}
                   </div>
                 </div>
                 <div class="pe-item">
@@ -191,6 +191,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { hkipoApi } from '@/api/hkipo'
 import { useUserStore } from '@/stores/user'
 import { formatNumber } from '@/utils/format'
+import TierBadge from '@/components/TierBadge.vue'
 import {
   ArrowLeft, InfoFilled, DataAnalysis, Clock, Operation,
   Star, StarFilled, Tickets, TrendCharts

@@ -2,6 +2,7 @@
   <div class="page-container">
     <div class="page-header">
       <h2>新股申购</h2>
+      <TierBadge :tier="store.tier" :threshold="store.threshold" />
     </div>
 
     <div class="summary-cards" v-if="summary">
@@ -89,7 +90,7 @@
           </el-table-column>
           <el-table-column label="中签率" width="90" align="right">
             <template #default="{ row }">
-              <span v-if="row.winRate">{{ row.winRate }}%</span>
+              <span v-if="row.winRate !== ''">{{ row.winRate }}%</span>
               <span v-else class="text-muted">--</span>
             </template>
           </el-table-column>
@@ -134,7 +135,7 @@
             </div>
             <div class="card-info-row">
               <span>发行价: <b>{{ item.ipoPrice > 0 ? formatNumber(item.ipoPrice) : '--' }}</b></span>
-              <span v-if="item.winRate">中签率: {{ item.winRate }}%</span>
+              <span v-if="item.winRate !== ''">中签率: {{ item.winRate }}%</span>
             </div>
             <div class="card-info-row">
               <span v-if="item.firstDayGain" class="text-success">首日: {{ item.firstDayGain }}</span>
@@ -153,6 +154,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useHkipoStore } from '@/stores/hkipo'
 import { formatNumber } from '@/utils/format'
+import TierBadge from '@/components/TierBadge.vue'
+import TimeStamp from '@/components/TimeStamp.vue'
 
 const router = useRouter()
 const store = useHkipoStore()

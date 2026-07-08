@@ -5,6 +5,7 @@ export const useAppStore = defineStore('app', () => {
   const isDarkMode = ref(false)
   const loading = ref(false)
   const cloudRunUrl = ref('')
+  const lastUpdated = ref(null)
 
   const FALLBACK_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
@@ -31,6 +32,10 @@ export const useAppStore = defineStore('app', () => {
 
   function setLoading(val) {
     loading.value = val
+  }
+
+  function setLastUpdated(time = new Date()) {
+    lastUpdated.value = time instanceof Date ? time.toISOString() : time
   }
 
   function validateUrl(url) {
@@ -67,8 +72,8 @@ export const useAppStore = defineStore('app', () => {
   }
 
   return {
-    isDarkMode, loading, cloudRunUrl,
-    initTheme, initCloudRunUrl, toggleDarkMode, setLoading,
+    isDarkMode, loading, cloudRunUrl, lastUpdated,
+    initTheme, initCloudRunUrl, toggleDarkMode, setLoading, setLastUpdated,
     setCloudRunUrl, clearCloudRunUrl, getEffectiveBaseUrl
   }
 })
