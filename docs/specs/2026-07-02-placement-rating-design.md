@@ -69,8 +69,8 @@ def _calc_placement_score(issue_size, tradable_amount, safety_pad):
     return round(size_score * 30 + float_score * 40 + safety_score * 30)
 
 def _get_rating_by_score(score):
-    if score >= 70: return 'recommend'
-    if score >= 40: return 'watch'
+    if score >= 80: return 'recommend'
+    if score >= 60: return 'watch'
     return 'caution'
 ```
 
