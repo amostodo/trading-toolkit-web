@@ -121,7 +121,8 @@ export const convertibleApi = {
 ```javascript
 // src/stores/convertible.js
 export const useConvertibleStore = defineStore('convertible', () => {
-  const pendingList = ref([])    // 归一化后的配售列表
+  const pendingSourceList = ref([]) // 保留 API 源字段的配售列表
+  const pendingList = computed(() => []) // 按当前全局溢价率派生的配售列表
   const signals = ref({})        // 归一化后的信号数据
   const loading = ref(false)
 
@@ -275,7 +276,7 @@ normalizeBondItem()
 |------|------|------|
 | `normalizePendingItem()` | stores/convertible.js L193 | 配售项归一化 |
 | `normalizeBondItem()` | stores/convertible.js L104 | 信号项归一化 |
-| `computeSafetyPad()` | stores/convertible.js L92 | 安全垫计算 |
+| `derivePlacementItem()` | stores/convertible.js | 按当前全局溢价率派生配债收益、安全垫和评分 |
 | `detectExchange()` | stores/convertible.js L9 | 交易所判定 |
 | `detectSector()` | stores/convertible.js L82 | 板块检测 |
 | `parseProgressDates()` | stores/convertible.js L33 | 进度日期解析 |

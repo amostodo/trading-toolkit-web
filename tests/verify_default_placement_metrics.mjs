@@ -75,11 +75,35 @@ await page.route('**/api/v1/**', async (route) => {
     data = pendingCandidates
   }
   if (pathname.endsWith('/convertible/signals')) {
-    data = { double_low: [], force_redeem: [], discount: [], down_revised: [] }
+    data = {
+      double_low: [{
+        bond_name: 'Unrelated Signal',
+        bond_code: '110100',
+        stock_name: 'Signal Stock',
+        stock_code: '600100',
+        price: 100,
+        premium_rate: 5,
+        conversion_value: 95,
+        conversion_price: 10,
+        stock_price: 9.5
+      }],
+      force_redeem: [],
+      discount: [],
+      down_revised: []
+    }
   }
   if (pathname.endsWith('/convertible/list')) data = { items: [], total: 0 }
   if (pathname.endsWith('/convertible/temperature')) data = {}
   if (pathname.endsWith('/market/overview')) data = { convertible_bond: {} }
+  if (pathname.endsWith('/lof/list')) {
+    data = {
+      items: [{
+        name: 'Unrelated LOF', code: '501000', exchange: 'sh', price: 1.1, valuation: 1,
+        premium: 10, change_pct: 1, amount: 1000, volume: 1000, limit_status: '不限'
+      }]
+    }
+  }
+  if (pathname.endsWith('/lof/summary')) data = { count: 1, premium_avg: 10, top_premium: 10 }
 
   await route.fulfill({
     contentType: 'application/json',
@@ -160,6 +184,10 @@ try {
   assert.deepEqual(premiumOptions, [30, 40, 50, 60, 70, 80, 90, 100], 'only approved premium options should be exposed')
 
   const requestsBeforeChange = pendingRequestCount
+  const unrelatedSignalBefore = await page.evaluate(async () => {
+    const { useConvertibleStore } = await import('/src/stores/convertible.js')
+    return useConvertibleStore().signals.double_low.map((item) => ({ bondName: item.bondName, doubleLow: item.doubleLow }))
+  })
   await alphaRow.locator('td').first().click()
   await page.locator('.pending-dialog').waitFor()
   const adjustedMetrics = await page.evaluate(async () => {
@@ -187,6 +215,11 @@ try {
     saved: '100'
   }, '100% should synchronously recalculate and persist placement metrics')
   assert.equal(pendingRequestCount, requestsBeforeChange, 'changing the local assumption must not refetch placement data')
+  const unrelatedSignalAfter = await page.evaluate(async () => {
+    const { useConvertibleStore } = await import('/src/stores/convertible.js')
+    return useConvertibleStore().signals.double_low.map((item) => ({ bondName: item.bondName, doubleLow: item.doubleLow }))
+  })
+  assert.deepEqual(unrelatedSignalAfter, unrelatedSignalBefore, 'placement-only assumption must not alter other convertible strategies')
 
   await page.waitForFunction(() => document.querySelector('.pending-dialog')?.textContent?.includes('1000元'))
   const detailText = await page.locator('.pending-dialog').innerText()
@@ -238,6 +271,18 @@ try {
     return { premiumRate: store.placementPremiumRate, rejected: store.setPlacementPremiumRate(-10) }
   })
   assert.deepEqual(invalidCacheMetrics, { premiumRate: 30, rejected: false }, 'invalid persisted or updated values should never enter placement calculations')
+
+  const lofIsolation = await page.evaluate(async () => {
+    const { useConvertibleStore } = await import('/src/stores/convertible.js')
+    const { useLofStore } = await import('/src/stores/lof.js')
+    const lofStore = useLofStore()
+    await lofStore.loadAll()
+    const before = lofStore.fundList.map((item) => ({ code: item.code, premium: item.premium, expectedProfit: item.expectedProfit }))
+    useConvertibleStore().setPlacementPremiumRate(100)
+    const after = lofStore.fundList.map((item) => ({ code: item.code, premium: item.premium, expectedProfit: item.expectedProfit }))
+    return { before, after }
+  })
+  assert.deepEqual(lofIsolation.after, lofIsolation.before, 'placement-only assumption must not alter LOF data or derived results')
 
   assert.deepEqual(browserErrors, [], 'placement rendering should not raise browser errors')
 } finally {
