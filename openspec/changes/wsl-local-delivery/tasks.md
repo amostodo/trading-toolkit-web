@@ -1,6 +1,6 @@
 ## 1. Delivery Workflow
 
-- [ ] Add the WSL operator script and systemd user-service template.
-- [ ] Add installation and health-check behavior, including service-checkout protection.
-- [ ] Add deterministic script verification and operator documentation.
-- [ ] Validate OpenSpec and run the production build.
+- [x] Add the WSL operator script and systemd user-service template.
+- [x] Add installation and health-check behavior, including service-checkout protection.
+- [x] Add deterministic script verification and operator documentation.
+- [x] Validate OpenSpec and run the production build.
