@@ -4,4 +4,4 @@
 
 ## 2. Verification
 
-- [ ] 2.1 Deploy the WSL workflow and verify the convertible page renders persisted pending candidates.
+- [x] 2.1 Deploy the WSL workflow and verify the convertible page renders persisted pending candidates.
